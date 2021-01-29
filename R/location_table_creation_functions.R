@@ -4,7 +4,7 @@
 ## CRVS analysis. These tables include:
 ##  - Location hierarchy snapshots (blank templates, to be filled by user)
 ##  - Location change histories (blank templates, to be filled by user)
-##  - Location hierarchies over a time period
+##  - Location hierarchies for each year over a time period
 ##  - Stable location hierarchy tables
 ##  - Full location metadata tables
 ##
@@ -96,7 +96,7 @@
 #'       unit A.
 #'
 #' @param table_name [char] Name of a valid location table. Valid options include
-#'   'snapshot' and 'change'
+#'   'snapshot', 'annual', 'change', and 'stable'
 #'
 #' @return A data.table with a single row of <NA> data entries, formatted with the correct
 #'  field names and data types for the specified location table.
