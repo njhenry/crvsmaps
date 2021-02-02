@@ -5,6 +5,25 @@
 ## -------------------------------------------------------------------------------------->
 
 
+#' Validate analysis years
+#'
+#' @description Validate the starting and ending years for the analysis period
+#'
+#' @details Note: this is a helper function that is not exposed to the user
+#'
+#' @param year_start First year of the analysis time series
+#' @param year_end Final year of the analysis time series
+#'
+#' @return Returns silently; fails informatively if the year range is invalid
+validate_year_range <- function(year_start, year_end){
+  # Validate years
+  if((class(year_start) != 'integer')) stop("year_start must be an integer.")
+  if((class(year_end) != 'integer')) stop("year_end must be an integer.")
+  if(year_start > year_end) stop('year_start must be less than or equal to year_end')
+  invisible()
+}
+
+
 #' Get valid CRVS location tables
 #'
 #' @description Helper function that returns valid location table names for CRVS analysis.
@@ -272,9 +291,88 @@ validate_location_full_table_internal <- function(
 #' @description Validate the internal validity of any location table used for CRVS
 #'   spatial analysis
 #'
-#' @param input_table The location table to be validated for internal consistency
+#' @details To create a valid location hierarchy over a period of time, the user needs to
+#'   create two tables representing that location hierarchy, one representing snapshots of
+#'   the location hierarchy in particular years, and the other representing changes to the
+#'   location hierarchy across years. These tables are validated against each other and
+#'   then used to construct three additional useful location tables for CRVS analysis and
+#'   modeling. For more details and examples of these tables, check the package vignettes.
+#'
+#    The 'snapshot' table includes details about all sub-national administrative units in
+#'   years where the user has location data available. This table must include a complete
+#'   accounting of all administrative levels from the top level (states or provinces) down
+#'   to the most detailed unit of analysis (for example, districts or cantons) for every
+#'   year where data is available. The user is required to include data from the first and
+#'   last year of the analysis time series.
+#'
+#'   REQUIRED FIELDS FOR THE 'snapshot' TABLE:
+#'   - 'iso': ISO3 code for the country being modeled (character)
+#'   - 'year': Four-digit year when a snapshot was available (integer)
+#'   - 'level': Standardized administrative level for each location. Top-level
+#'       administrative divisions, often called states or provinces, are level 1. The
+#'       subdivisions contained within each top-level division, often called counties or
+#'       districts, are level 2. The subdivisions within each of those are level 3, and
+#'       so on. The top-level country information (level 0) should NOT be included in this
+#'       table. (integer)
+#'   - 'adm_code': Uniquely identifying code for each administrative subdivision in the
+#'       year when the snapshot was taken. These codes will often be numeric, but
+#'       internally they are treated as strings to catch alphanumeric codes. (character)
+#'   - 'parent_code': Uniquely identifying code for the containing/parent location of a
+#'       given administrative subdivision. These should be internally consistent for each
+#'       snapshot year - for example, the parent codes of level 2 locations should match
+#'       identifying codes for level 1 locations. The parent codes for level 1 locations
+#'       should be input as NA strings. (character)
+#'   - 'adm_name': Name of the administrative subdivision. (character)
+#'   - 'adm_ascii_name': Name of the administrative subdivision, with all special
+#'       characters stripped or replaced with the ASCII equivalents. (character)
+#'
+#'   The 'change' table includes details about changes to the location hierarchy that
+#'   occurred over time: for example, one district splitting into two or the boundary
+#'   between two counties shifting.
+#'
+#'   REQUIRED FIELDS FOR THE 'change' TABLE INCLUDE:
+#'   - 'iso': ISO3 code for the country being modeled (character)
+#'   - 'year': The four-digit year when the change in the location hierarchy took place.
+#'       Changes are applied immediately at the BEGINNING of a year: for example, if a
+#'       new administrative unit is evident in a 2007 location snapshot but not in 2006,
+#'       the change in this table indicating that new unit's creation should be assigned
+#'       to the year 2007. (integer)
+#'   - 'change_number': Number uniquely representing a particular change in a given year
+#'       (as changes can often span multiple table rows) as well as the order in which it
+#'       will be applied to the previous year of data. The order of applying changes
+#'       matters only for more complicated multi-step administrative redivisions.
+#'       Numbering can be sequential across all years in this table, or numbering can
+#'       restart at 1 for each year. (integer)
+#'   - 'change_type': The type of change affecting these administrative units. Valid
+#'       options include:
+#'         * 'SPLIT' - One starting unit splits into two or more units
+#'         * 'MERGE' - Two or more starting units merge into a single unit
+#'         * 'CODE' - The identifying code for an administrative unit changes, but its
+#'             borders remain unaffected
+#'         * 'BORDER' - The border between two administrative units changes. In the case
+#'             that this border change does not change does not change administrative
+#'             codes, 'start_code' and 'end_code' will be the same; for border swaps that
+#'             change one or both of the administrative codes, 'start_code' and 'end_code'
+#'             can be different.
+#'   - 'level': Level of administrative unit that is affected by these changes. Some
+#'       administrative redistricting can affect multiple levels of a location hierarchy;
+#'       these should be represented by 2+ distinct records with different levels.
+#'   - 'start_code': The administrative code ('adm_code' in the snapshot table) for the
+#'       administrative unit before the change is applied. For more information, see the
+#'       package documentation.
+#'   - 'end_code': The administrative code ('adm_code' in the snapshot table) for the
+#'       administrative unit after the change is applied. For more information, see the
+#'       package documentation.
+#'   - 'swap_with': For the 'BORDER' change_type only, what is the uniquely-identifying
+#'       code for the administrative unit that swaps territory with this unit? Swaps must
+#'       be reciprocal - if one row indicates that unit A swapped with unit B, then
+#'       another row with the same 'change_number' must indicate that unit B swapped with
+#'       unit A.
+#'
+#'
 #' @param table_name Name of the type of location table being validated. Must be a valid
 #'   table name per `get_valid_location_table_names()`.
+#' @param input_table The location table to be validated for internal consistency
 #' @param check_years [integer, default NULL] Which years of data should be checked? Only
 #'   used for the 'snapshot', 'annual', and 'change' table types. For these table types,
 #'   `check_years` is NULL (the default), checks all unique years listed in the table.
@@ -290,27 +388,32 @@ validate_location_full_table_internal <- function(
 #' @import data.table knitr
 #' @export
 validate_location_table <- function(
-  input_table, table_name, check_years = NULL, raise_issues_as_errors = TRUE
+  table_name, input_table, check_years = NULL, raise_issues_as_errors = TRUE
 ){
   # Check that table is valid and that all required columns are present
   validate_location_table_name(table_name)
   field_classes <- get_location_table_field_classes(table_name)
-  missing_fields <- setdiff(names(input_table), names(field_classes))
+  missing_fields <- setdiff(names(field_classes), names(input_table))
   if(length(missing_fields) > 0){
     stop(
-      "Pre-validation error: missing required fields ",
+      table_name, " pre-validation error - missing required fields: ",
       paste(missing_fields, collapse=', ')
     )
   }
 
   # Check that table fields all have the correct classes
-  class_mismatch_table <- data.table(
+  class_mismatch_table <- data.table::data.table(
     field = names(field_classes),
     required_class = field_classes
-  )[, class_in_data := class(input_table[[field]])][ required_class != class_in_data , ]
+  )
+  class_mismatch_table$class_in_data <- lapply(
+    class_mismatch_table$field,
+    function(field_name) class(input_table[[field_name]])
+  )
+  class_mismatch_table <- class_mismatch_table[ required_class != class_in_data , ]
   if(nrow(class_mismatch_table) > 0){
     stop(
-      "Pre-validation error: Incorrect classes for required fields:\n",
+      table_name, " pre-validation error: Incorrect classes for required fields:\n",
       paste(capture.output(class_mismatch_table), collapse='\n')
     )
   }
@@ -325,7 +428,7 @@ validate_location_table <- function(
   }
 
   # Apply specific validation function for this table
-  validation_function <- paste0('validate_location_',input_table,'_table_internal')
+  validation_function <- paste0('validate_location_',table_name,'_table_internal')
   issues_list <- do.call(
     validation_function,
     args = list(

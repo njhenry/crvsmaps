@@ -17,88 +17,12 @@
 #'   column types. This function can be used to confirm the proper format for the location
 #'   hierarchy snapshot and change history tables that need to be filled by the user.
 #'
-#' @details To create a valid location hierarchy over a period of time, the user needs to
-#'   create two tables representing that location hierarchy, one representing snapshots of
-#'   the location hierarchy in particular years, and the other representing changes to the
-#'   location hierarchy across years. These tables are validated against each other and
-#'   then used to construct useful data structures for CRVS analysis and modeling. For
-#'   more details and examples of these tables, check the documntation: `help(mapcrvs)`
-#'
-#    The 'snapshot' table includes details about all sub-national administrative units in
-#'   years where the user has location data available. This table must include a complete
-#'   accounting of all administrative levels from the top level (states or provinces) down
-#'   to the most detailed unit of analysis (for example, districts or cantons) for every
-#'   year where data is available. The user is required to include data from the first and
-#'   last year of the analysis time series.
-#'
-#'   REQUIRED FIELDS FOR THE 'snapshot' TABLE:
-#'   - 'iso': ISO3 code for the country being modeled (character)
-#'   - 'year': Four-digit year when a snapshot was available (integer)
-#'   - 'level': Standardized administrative level for each location. Top-level
-#'       administrative divisions, often called states or provinces, are level 1. The
-#'       subdivisions contained within each top-level division, often called counties or
-#'       districts, are level 2. The subdivisions within each of those are level 3, and
-#'       so on. The top-level country information (level 0) should NOT be included in this
-#'       table. (integer)
-#'   - 'adm_code': Uniquely identifying code for each administrative subdivision in the
-#'       year when the snapshot was taken. These codes will often be numeric, but
-#'       internally they are treated as strings to catch alphanumeric codes. (character)
-#'   - 'parent_code': Uniquely identifying code for the containing/parent location of a
-#'       given administrative subdivision. These should be internally consistent for each
-#'       snapshot year - for example, the parent codes of level 2 locations should match
-#'       identifying codes for level 1 locations. The parent codes for level 1 locations
-#'       should be input as <NA> strings. (character)
-#'   - 'adm_name': Name of the administrative subdivision. (character)
-#'   - 'adm_ascii_name': Name of the administrative subdivision, with all special
-#'       characters stripped or replaced with the ASCII equivalents. (character)
-#'
-#'   The 'change' table includes details about changes to the location hierarchy that
-#'   occurred over time: for example, one district splitting into two or the boundary
-#'   between two counties shifting.
-#'
-#'   REQUIRED FIELDS FOR THE 'change' TABLE INCLUDE:
-#'   - 'iso': ISO3 code for the country being modeled (character)
-#'   - 'year': The four-digit year when the change in the location hierarchy took place.
-#'       Changes are applied immediately at the BEGINNING of a year: for example, if a
-#'       new administrative unit is evident in a 2007 location snapshot but not in 2006,
-#'       the change in this table indicating that new unit's creation should be assigned
-#'       to the year 2007. (integer)
-#'   - 'change_number': Number uniquely representing a particular change in a given year
-#'       (as changes can often span multiple table rows) as well as the order in which it
-#'       will be applied to the previous year of data. The order of applying changes
-#'       matters only for more complicated multi-step administrative redivisions.
-#'       Numbering can be sequential across all years in this table, or numbering can
-#'       restart at 1 for each year. (integer)
-#'   - 'change_type': The type of change affecting these administrative units. Valid
-#'       options include:
-#'         * 'SPLIT' - One starting unit splits into two or more units
-#'         * 'MERGE' - Two or more starting units merge into a single unit
-#'         * 'CODE' - The identifying code for an administrative unit changes, but its
-#'             borders remain unaffected
-#'         * 'BORDER' - The border between two administrative units changes. In the case
-#'             that this border change does not change does not change administrative
-#'             codes, 'start_code' and 'end_code' will be the same; for border swaps that
-#'             change one or both of the administrative codes, 'start_code' and 'end_code'
-#'             can be different.
-#'   - 'level': Level of administrative unit that is affected by these changes. Some
-#'       administrative redistricting can affect multiple levels of a location hierarchy;
-#'       these should be represented by 2+ distinct records with different levels.
-#'   - 'start_code': The administrative code ('adm_code' in the snapshot table) for the
-#'       administrative unit before the change is applied. For more information, see the
-#'       package documentation.
-#'   - 'end_code': The administrative code ('adm_code' in the snapshot table) for the
-#'       administrative unit after the change is applied. For more information, see the
-#'       package documentation.
-#'   - 'swap_with': For the 'BORDER' change_type only, what is the uniquely-identifying
-#'       code for the administrative unit that swaps territory with this unit? Swaps must
-#'       be reciprocal - if one row indicates that unit A swapped with unit B, then
-#'       another row with the same 'change_number' must indicate that unit B swapped with
-#'       unit A.
+#' @details
 #'
 #' @param table_name [char] Name of a valid location table. Valid options include
-#'   'snapshot', 'annual', 'change', and 'stable'
+#'   'snapshot', 'annual', 'change', 'stable', and 'full'
 #'
-#' @return A data.table with a single row of <NA> data entries, formatted with the correct
+#' @return A data.table with a single row of NA data entries, formatted with the correct
 #'  field names and data types for the specified location table.
 #'
 #' @import data.table
@@ -119,4 +43,177 @@ create_location_table_template <- function(table_name){
     colClasses = field_classes
   )
   return(template_table)
+}
+
+
+#' Build annual location table
+#'
+#' @description Construct a table describing the location hierarchy for all years in
+#'   the time series.
+#'
+#' @details For more information about the 'change', 'annual', and 'stable' location
+#'   tables, refer to the package vignettes and the documentation for
+#'   \code{\link{validate_location_table}}
+#'
+#' @param snapshot_table A valid 'snapshot' location table describing the location
+#'   hierarchy in years where data is available.
+#' @param change_table A valid 'change' location table describing changes to the location
+#'   hierarchy from one year to the next.
+#' @param year_start First year of the analysis time series
+#' @param year_end Final year of the analysis time series
+#' @param verbose [bool, default TRUE] Print messages about table construction progress?
+#'
+#' @return
+#'
+#' @import data.table
+#' @export
+build_annual_location_table <- function(
+  snapshot_table, change_table, year_start, year_end, verbose = TRUE
+){
+  if(verbose) message("Building annual location table:")
+
+  # Validate input arguments
+  if(verbose) message("  - Validating input arguments")
+  validate_year_range(year_start = year_start, year_end = year_end)
+  year_range <- start_year:end_year
+  validate_location_table('snapshot', input_table=snapshot_table, check_years=year_range)
+  validate_location_table('change', input_table = change_table, check_years = year_range)
+
+  # ETC ETC
+  if(verbose) message("  - ETC ETC")
+
+  return(data.table())
+}
+
+
+#' Build stable location table
+#'
+#' @description Construct a table that identifies unique geographic units with stable
+#'   boundaries throughout the time period.
+#'
+#' @details For more information about the 'change', 'annual', and 'stable' location
+#'   tables, refer to the package vignettes and the documentation for
+#'   \code{\link{validate_location_table}}
+#'
+#' @param change_table A valid 'change' location table describing changes to the location
+#'   hierarchy from one year to the next.
+#' @param annual_table A valid 'annual' location table describing the location
+#'   hierarchy for all years in the years between \code{year_start} and \code{year_end}
+#'   (inclusive).
+#' @param year_start First year of the analysis time series
+#' @param year_end Final year of the analysis time series
+#' @param verbose [bool, default TRUE] Print messages about table construction progress?
+#'
+#' @return
+#'
+#' @import data.table
+#' @export
+build_stable_location_table <- function(
+  change_table, annual_table, year_start, year_end, verbose = TRUE
+){
+  if(verbose) message("Building stable location table:")
+
+  # Validate input arguments
+  if(verbose) message("  - Validating input arguments")
+  validate_year_range(year_start = year_start, year_end = year_end)
+  year_range <- start_year:end_year
+  validate_location_table('change', input_table = change_table, check_years = year_range)
+  validate_location_table('annual', input_table = annual_table, check_years = year_range)
+
+  # ETC ETC
+  if(verbose) message("  - ETC ETC")
+
+
+  return(data.table())
+}
+
+
+#' Build full location metadata table
+#'
+#' @description
+#'
+#' @details For more information about the 'annual', 'stable', and 'full' location tables,
+#'   refer to the package vignettes and the documentation for
+#'   \code{\link{validate_location_table}}
+#'
+#' @param annual_table A valid 'annual' location table describing the location
+#'   hierarchy for all years in the years between \code{year_start} and \code{year_end}
+#'   (inclusive).
+#' @param stable_table A valid 'stable' location table that identifies unique geographic
+#'   units that have stable boundaries across the time period.
+#' @param year_start First year of the analysis time series
+#' @param year_end Final year of the analysis time series
+#' @param verbose [bool, default TRUE] Print messages about table construction progress?
+#'
+#' @return
+#'
+#' @import data.table
+#' @export
+build_full_location_table <- function(
+  annual_table, stable_table, year_start, year_end, verbose = TRUE
+){
+  if(verbose) message("Building full location metadata table:")
+
+  # Validate input arguments
+  if(verbose) message("  - Validating input arguments")
+  validate_year_range(year_start = year_start, year_end = year_end)
+  year_range <- start_year:end_year
+  validate_location_table('annual', input_table = annual_table, check_years = year_range)
+  validate_location_table('stable', input_table = stable_table, check_years = year_range)
+
+  # ETC ETC
+  if(verbose) message("  - ETC ETC")
+
+  return(data.table())
+}
+
+
+#' Build the 'annual', 'stable', and 'full' location tables.
+#'
+#' @description Based on two user-constructed location tables ('snapshot' and 'change'),
+#'   construct the three derivative location tables that are needed for analysis.
+#'
+#' @details The location tables constructed by this function are, in order: 'annual',
+#'   'stable', and 'full'. For more information on all the location tables, refer to the
+#'   package vignettes and the documentation for \code{\link{validate_location_table}}
+#'
+#' @param snapshot_table A valid 'snapshot' location table describing the location
+#'   hierarchy in years where data is available.
+#' @param change_table A valid 'change' location table describing changes to the location
+#'   hierarchy from one year to the next.
+#' @param year_start First year of the analysis time series
+#' @param year_end Final year of the analysis time series
+#' @param verbose [bool, default TRUE] Print messages about table construction progress?
+#'
+#' @return A list of the three derived location tables for small-area CRVS analysis:
+#'    - 'annual': Describes the location hierarchy for ALL years in the time period
+#'    - 'stable': Identifies geographic units with stable boundaries over the time period
+#'    - 'full': Full location metadata table containing identifiers from both the 'annual'
+#'        and 'stable' tables
+#'
+#' @export
+build_all_location_tables <- function(
+  snapshot_table, change_table, year_start, year_end, verbose = TRUE
+){
+  # Using snapshot and change tables, build annual table
+  annual_table <- build_annual_location_table(
+    snapshot_table = snapshot_table, change_table = change_table, year_start = year_start,
+    year_end = year_end, verbose = verbose
+  )
+  # Using change and annual tables, build stable table
+  stable_table <- build_stable_location_table(
+    change_table = change_table, annual_table = annual_table, year_start = year_start,
+    year_end = year_end, verbose = verbose
+  )
+  # Merge stable table onto annual table to build full location metadata table
+  full_table <- build_full_location_table(
+    annual_table = annual_table, stable_table = stable_table, year_start = year_start,
+    year_end = year_end, verbose = verbose
+  )
+  # Validate the full location metadata table
+  validate_location_table('full', input_table=full_table, check_years=year_start:year_end)
+
+  # Return
+  if(verbose) message("All location tables have been constructed successfully.")
+  return(list(annual = annual_table, stable = stable_table, full = full_table))
 }
