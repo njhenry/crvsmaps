@@ -17,7 +17,8 @@
 #'   column types. This function can be used to confirm the proper format for the location
 #'   hierarchy snapshot and change history tables that need to be filled by the user.
 #'
-#' @details
+#' @details For more information about the location tables, refer to the package vignettes
+#'   and the documentation for \code{\link{validate_location_table}}
 #'
 #' @param table_name [char] Name of a valid location table. Valid options include
 #'   'snapshot', 'annual', 'change', 'stable', and 'full'
