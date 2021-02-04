@@ -154,8 +154,80 @@ get_location_table_field_classes <- function(table_name){
 validate_location_hierarchy_table_internal <- function(
   input_table, check_years
 ){
-  issues_list <- list()
-  return(issues_list)
+  # Initialize issues lists
+  il <- list()
+  # Check that there are no NA values in any fields except for 'parent_code'
+  reqd_cols <- setdiff(get_location_table_required_fields('snapshot'), 'parent_code')
+  for(reqd_col in reqd_cols){
+    if(any(is.na(input_table[[reqd_col]]))) il <- c(il, paste0('NAs in "',reqd_col,'" field.'))
+  }
+  # Check for missing years
+  missing_yrs <- setdiff(check_years, unique(input_table$year))
+  if(length(missing_yrs) > 0){
+    il <- c(il, paste("Missing required years: ", missing_yrs ,collapse=', '))
+  }
+
+  # Iterate by level and year
+  max_adm = max(input_table$level)
+
+  for(thisyr in check_years){
+    for(thislvl in 1:max_adm){
+      # Helper function
+      add_iss <- function(...) paste0('Year ', thisyr, ', admin', thislvl, ': ', ...)
+      # Check subset of dataset
+      in_sub <- input_table[(year==thisyr) & (level==thislvl), ]
+
+      # Only perform most checks if the data subset has any rows
+      if(nrow(in_sub) == 0){
+        il <- c(il, add_iss("Missing all rows in this required subset!"))
+      } else {
+
+        # Check that there are no duplicate locations in a given year-level
+        dupes <- in_sub[, .N, by=adm_code][N > 1, adm_code]
+        if(length(dupes) > 0){
+          il <- c(il, add_iss("Duplicate location codes ", paste(dupes, collapse=', ')))
+        }
+
+        # If this is not the most detailed administrative level, check that all locations
+        #  have children in the next-most-detailed level
+        if(thislvl < max_adm){
+          child_codes <- input_table[
+            (year==thisyr) & (level==(thislvl+1)) & !is.na(parent_code),
+            unique(parent_code)
+          ]
+          missing_children <- na.omit(setdiff(unique(in_sub$adm_code), child_codes))
+          if(length(missing_children) > 0){
+            il <- c(il, add_iss(
+              "Locations ", paste(missing_children, collapse=', '),
+              "missing children in level ",thislvl + 1
+            ))
+          }
+        }
+
+        # For admin levels > 1 only, check that parent_code matches real locations
+        if(thislvl > 1){
+          # Check for NA parents
+          na_parents <- nrow(in_sub[is.na(parent_code), ])
+          if(na_parents > 0) il <- c(il, add_iss(na_parents, " rows have NA parent_codes."))
+          # Check for parents that are not recorded in the level above
+          parent_codes <- input_table[
+            (year==thisyr) & (level==(thislvl-1)) & !is.na(adm_code),
+            unique(adm_code)
+          ]
+          missing_parents <- na.omit(setdiff(unique(in_sub$parent_code), parent_codes))
+          if(length(missing_parents) > 0){
+            il <- c(il, add_iss(
+              "Parent codes ", paste(missing_parents, collapse=', '),
+              " not found among admin",thislvl-1," locations"
+            ))
+          }
+        }
+
+      } # END else statement indicating data subset has > 0 rows
+    } # END admin level iteration
+  } # END year iteration
+
+  return(il)
 }
 
 
@@ -390,8 +462,11 @@ validate_location_full_table_internal <- function(
 validate_location_table <- function(
   table_name, input_table, check_years = NULL, raise_issues_as_errors = TRUE
 ){
-  # Check that table is valid and that all required columns are present
+  # Check that table and table name are valid
   validate_location_table_name(table_name)
+  if(!is.data.table(input_table)) stop(table_name,' pre-validation error: not a data.table')
+
+  # Check that all required fields are present
   field_classes <- get_location_table_field_classes(table_name)
   missing_fields <- setdiff(names(field_classes), names(input_table))
   if(length(missing_fields) > 0){
@@ -437,15 +512,21 @@ validate_location_table <- function(
     )[names(formals(validation_function))]
   )
 
-  # Optionally raise errors
-  if((length(issues_list) > 0) & (raise_issues_as_errors==TRUE)){
-    stop(
-      "Validation issues for table ",table_name,":\n  - ",
-      paste(issues_list, collapse='\n  - ')
-    )
+  # Function output depends on the argument `raise_issues_as_errors`:
+  #  - If TRUE, throw an error if there are issues, and pass silently if there are none
+  #  - If FALSE, return the list of issues even if it is empty
+  if(raise_issues_as_errors==TRUE){
+    if(length(issues_list) > 0){
+      stop(
+        "Validation issues for table ",table_name,":\n  - ",
+        paste(issues_list, collapse='\n  - ')
+      )
+    } else {
+      invisible()
+    }
+  } else {
+    return(issues_list)
   }
-  # If validity issues were not raised as errors, return them as a list
-  return(issues_list)
 }
 
 
