@@ -293,6 +293,88 @@ validate_location_annual_table_internal <- function(
 }
 
 
+#' Get valid change types
+#'
+#' @description This function enumerates all the valid location change types
+#'
+#' @return [char] Vector of valid change types
+#'
+#' @export
+get_valid_change_types <- function(){
+  return(c('SPLIT','MERGE','CODE','BORDER'))
+}
+
+
+#' Validate a single location change
+#'
+#' @description Validate a single change within a location change table
+#'
+#' @details This is a helper function for
+#'   \code{\link{validate_location_change_table_internal}} and is not exposed to the
+#'   package user. This function does NOT check field names or data types, since these
+#'   checks are assumed to happen at the table level.
+#'
+#' @param change_table A data.table subset of the 'change' location table, providing all
+#'   available rows corresponding to a single location change in a single year
+#'
+#' @return List of issues corresponding to this particular change
+#'
+#' @import data.table
+validate_single_location_change <- function(change_table){
+  # Check that there is only one valid change type represented
+  change_type <- unique(change_table$change_type)
+  if(length(change_type) != 1){
+    return("This change does not have a consistent change type across all rows")
+  }
+  valid_change_types <- get_valid_change_types()
+  if(!change_type %in% valid_change_types){
+    valid_changes_txt <- paste(valid_change_types, collapse=', ')
+    return(paste0("change_type not one of ", valid_changes_txt, " (case-sensitive)"))
+  }
+
+  # Conditional on the change type being valid, perform more detailed checks
+  il <- character(0)
+
+  n_rows <- nrow(change_table)
+  n_start <- length(unique(change_table$start_code))
+  n_end <- length(unique(change_table$end_code))
+
+  if(change_type == 'SPLIT'){
+    if(n_rows < 2) il <- c(il, 'SPLITs must have at least two rows')
+    if(n_start > 1) il <- c(il, 'All start_codes for SPLIT change must be identical')
+    if(n_end < n_rows) il <- c(il, 'All end_codes for SPLIT change must be unique')
+
+  } else if(change_type == 'MERGE'){
+    if(n_rows < 2) il <- c(il, 'MERGEs must have at least two rows')
+    if(n_start < n_rows) il <- c(il, 'All start_codes for MERGE change must be unique')
+    if(n_end > 1) il <- c(il, 'All end_codes for MERGE change must be identical')
+
+  } else if(change_type == 'BORDER'){
+    if(n_rows != 2) il <- c(il, "BORDER swaps must have at exactly two rows")
+    if(n_start != 2) il <- c(il, "BORDER swaps must start with two unique locations")
+    if(n_end != 2) il <- c(il, "BORDER swaps must end with two unique locations")
+    start_codes <- unique(change_table$start_code)
+    swap_codes <- unique(change_table$swap_with)
+    if(any(is.na(swap_codes))) il <- c(il, 'swap_with must be filled for BORDER swaps')
+    if(any(start_codes==swap_codes)) il <- c(il, 'swap_with cannot be the same as start_code')
+    if(any(sort(start_codes) != sort(swap_codes))){
+      il <- c(il, 'all start_codes must swap with another territory in a BORDER change')
+    }
+
+  } else if (change_type == 'CODE'){
+    if(n_rows != 1) il <- c(il, 'CODE changes should have exactly one row')
+    if(any(change_type$start_code == change_type$end_code)){
+      il <- c(il, "CODE changes should have different start and end codes")
+    }
+
+  } else {
+    stop('Validation for change type ', change_type, ' not initialized!')
+  }
+
+  return(il)
+}
+
+
 #' Validate location change table
 #'
 #' @description Validate that a location change table is internally consistent for each
@@ -315,8 +397,28 @@ validate_location_annual_table_internal <- function(
 validate_location_change_table_internal <- function(
   input_table, check_years
 ){
-  issues_list <- list()
-  return(issues_list)
+  il <- list()
+
+  # Check for NAs
+  reqd_cols <- setdiff(get_location_table_required_fields('change'), c('swap_with'))
+  for(reqd_col in reqd_cols){
+    if(any(is.na(input_table[[reqd_col]]))) il <- c(il, paste("NAs in field", reqd_col))
+  }
+
+  # Validate each change separately
+  in_sub <- input_table[(year %in% check_years) & !is.na(level) & !is.na(change_number), ]
+  change_wise_issues_dt <- in_sub[,
+    .(issue_txt = validate_single_location_change(.SD)),
+    by=.(year, level, change_number)
+  ]
+  if(nrow(change_wise_issues_dt) > 0){
+    change_wise_issues <- change_wise_issues_dt[,
+      paste0('Year ',year,', level ',level,', change ',change_number,': ',issue_txt)
+    ]
+    il <- c(il, as.list(change_wise_issues))
+  }
+
+  return(il)
 }
 
 
