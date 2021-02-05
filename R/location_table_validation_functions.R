@@ -33,7 +33,7 @@ validate_year_range <- function(year_start, year_end){
 #'
 #' @export
 get_valid_location_table_names <- function(){
-  valid_tables <- c('snapshot','annual','change','stable','full')
+  valid_tables <- c('annual','change','stable','full')
   return(valid_tables)
 }
 
@@ -74,9 +74,6 @@ get_location_table_required_fields <- function(table_name){
   validate_location_table_name(table_name)
   # List of all required fields by table
   required_fields <- list(
-    snapshot = c(
-      'iso','year','level','adm_code','parent_code','adm_name','adm_ascii_name'
-    ),
     annual = c(
       'iso','year','level','adm_code','parent_code','adm_name','adm_ascii_name'
     ),
@@ -131,33 +128,43 @@ get_location_table_field_classes <- function(table_name){
 }
 
 
-#' Validate location hierarchy table
+#' Validate 'annual' location hierarchy table
 #'
-#' @description Validate that a location hierarchy table is internally consistent for
-#'   each queried year.
+#' @description Validate that a location hierarchy table is internally consistent within
+#'   each year in a time series.
 #'
-#' @details This function can be used to check the 'snapshot' and 'annual' location
-#'   tables. It performs the following checks:
+#' @details This function can be used to check the 'annual' location table. It performs
+#'   the following checks:
 #'   - All required columns are present and have the correct data types and content
 #'   - All required location levels are present
 #'   - For multi-level tables, each location at the more-detailed levels have valid
 #'       parents and each location at the less-detailed levels have valid children
 #'
-#' @param input_table An input data.table containing a 'snapshot' or 'annual' location
-#'   hierarchy table
-#' @param check_years [integer] Which years should be checked?
+#' @param input_table An input data.table containing an 'annual' location hierarchy table
+#' @param check_years [integer] Which years should be checked? These should be sequential
 #'
 #' @return Returns a list of internal validity issues. If there are no internal validity
 #'   issues, returns an empty list.
 #'
 #' @import data.table
-validate_location_hierarchy_table_internal <- function(
+validate_location_annual_table_internal <- function(
   input_table, check_years
 ){
   # Initialize issues lists
   il <- list()
+
+  # Check for missing years in the time series
+  seq_years <- min(check_years):max(check_years)
+  missing_years <- setdiff(seq_years, unique(input_table$year))
+  if(length(missing_years) > 0){
+    il <- c(
+      il,
+      paste("Sequential years missing in time range:",paste(missing_years, collapse=', '))
+    )
+  }
+
   # Check that there are no NA values in any fields except for 'parent_code'
-  reqd_cols <- setdiff(get_location_table_required_fields('snapshot'), 'parent_code')
+  reqd_cols <- setdiff(get_location_table_required_fields('annual'), 'parent_code')
   for(reqd_col in reqd_cols){
     if(any(is.na(input_table[[reqd_col]]))) il <- c(il, paste0('NAs in "',reqd_col,'" field.'))
   }
@@ -228,68 +235,6 @@ validate_location_hierarchy_table_internal <- function(
   } # END year iteration
 
   return(il)
-}
-
-
-#' Validate 'snapshot' location hierarchy table
-#'
-#' @description Wrapper function to validate the location snapshot table, which is a
-#'   location hierarchy table that does not need to have all consecutive years available.
-#'
-#' @param input_table An input data.table containing a 'snapshot' or 'annual' location
-#'   hierarchy table
-#' @param check_years [integer] Which years should be checked?
-#'
-#' @return Returns a list of internal validity issues. If there are no internal validity
-#'   issues, returns an empty list.
-#'
-#' @import data.table
-validate_location_snapshot_table_internal <- function(
-  input_table, check_years
-){
-  issues_list <- validate_location_hierarchy_table_internal(
-    input_table = input_table, check_years = check_years
-  )
-  return(issues_list)
-}
-
-
-#' Validate 'annual' location hierarchy table
-#'
-#' @description Wrapper function to validate the annual location hierarchy table - this is
-#'   identical to the 'snapshot' table, with the exception that it must include all
-#'   sequential years in a time series.
-#'
-#' @param input_table An input data.table containing a 'snapshot' or 'annual' location
-#'   hierarchy table
-#' @param check_years [integer] Which years should be checked?
-#'
-#' @return Returns a list of internal validity issues. If there are no internal validity
-#'   issues, returns an empty list.
-#'
-#' @import data.table
-validate_location_annual_table_internal <- function(
-  input_table, check_years
-){
-  issues_list <- list()
-  # Check for sequential years
-  seq_years <- min(check_years):max(check_years)
-  missing_years <- setdiff(seq_years, unique(input_table$year))
-  if(length(missing_years) > 0){
-    issues_list <- c(
-      issues_list,
-      list(paste("Sequential years missing in time range: ",missing_years,collapse=', '))
-    )
-  }
-  # Check for all other location hierarchy issues
-  issues_list <- c(
-    issues_list,
-    validate_location_hierarchy_table_internal(
-      input_table = input_table, check_years = check_years
-    )
-  )
-  # Return
-  return(issues_list)
 }
 
 
@@ -467,21 +412,19 @@ validate_location_full_table_internal <- function(
 #'
 #' @details To create a valid location hierarchy over a period of time, the user needs to
 #'   create two tables representing that location hierarchy, one representing snapshots of
-#'   the location hierarchy in particular years, and the other representing changes to the
+#'   the location hierarchy in each analysis year, and the other representing changes to a
 #'   location hierarchy across years. These tables are validated against each other and
 #'   then used to construct three additional useful location tables for CRVS analysis and
 #'   modeling. For more details and examples of these tables, check the package vignettes.
 #'
-#    The 'snapshot' table includes details about all sub-national administrative units in
-#'   years where the user has location data available. This table must include a complete
-#'   accounting of all administrative levels from the top level (states or provinces) down
-#'   to the most detailed unit of analysis (for example, districts or cantons) for every
-#'   year where data is available. The user is required to include data from the first and
-#'   last year of the analysis time series.
+#    The 'annual' table includes details about all sub-national administrative units for
+#'   each year in an analysis time series. This table must include a complete accounting
+#'   of all administrative levels from the top level (states or provinces) down to the
+#'   most detailed unit of analysis (for example, districts or cantons) for each year.
 #'
-#'   REQUIRED FIELDS FOR THE 'snapshot' TABLE:
+#'   REQUIRED FIELDS FOR THE 'annual' TABLE:
 #'   - 'iso': ISO3 code for the country being modeled (character)
-#'   - 'year': Four-digit year when a snapshot was available (integer)
+#'   - 'year': Four-digit year (integer)
 #'   - 'level': Standardized administrative level for each location. Top-level
 #'       administrative divisions, often called states or provinces, are level 1. The
 #'       subdivisions contained within each top-level division, often called counties or
@@ -489,11 +432,11 @@ validate_location_full_table_internal <- function(
 #'       so on. The top-level country information (level 0) should NOT be included in this
 #'       table. (integer)
 #'   - 'adm_code': Uniquely identifying code for each administrative subdivision in the
-#'       year when the snapshot was taken. These codes will often be numeric, but
-#'       internally they are treated as strings to catch alphanumeric codes. (character)
+#'       given year. These codes will often be numeric, but internally they are treated as
+#'       strings to catch alphanumeric codes. (character)
 #'   - 'parent_code': Uniquely identifying code for the containing/parent location of a
 #'       given administrative subdivision. These should be internally consistent for each
-#'       snapshot year - for example, the parent codes of level 2 locations should match
+#'       year - for example, the parent codes of level 2 locations should match
 #'       identifying codes for level 1 locations. The parent codes for level 1 locations
 #'       should be input as NA strings. (character)
 #'   - 'adm_name': Name of the administrative subdivision. (character)
@@ -531,10 +474,10 @@ validate_location_full_table_internal <- function(
 #'   - 'level': Level of administrative unit that is affected by these changes. Some
 #'       administrative redistricting can affect multiple levels of a location hierarchy;
 #'       these should be represented by 2+ distinct records with different levels.
-#'   - 'start_code': The administrative code ('adm_code' in the snapshot table) for the
+#'   - 'start_code': The administrative code ('adm_code' in the annual table) for the
 #'       administrative unit before the change is applied. For more information, see the
 #'       package documentation.
-#'   - 'end_code': The administrative code ('adm_code' in the snapshot table) for the
+#'   - 'end_code': The administrative code ('adm_code' in the annual table) for the
 #'       administrative unit after the change is applied. For more information, see the
 #'       package documentation.
 #'   - 'swap_with': For the 'BORDER' change_type only, what is the uniquely-identifying
@@ -548,7 +491,7 @@ validate_location_full_table_internal <- function(
 #'   table name per `get_valid_location_table_names()`.
 #' @param input_table The location table to be validated for internal consistency
 #' @param check_years [integer, default NULL] Which years of data should be checked? Only
-#'   used for the 'snapshot', 'annual', and 'change' table types. For these table types,
+#'   used for the 'annual', and 'change' table types. For these table types, if
 #'   `check_years` is NULL (the default), checks all unique years listed in the table.
 #' @param raise_issues_as_errors [logical, default TRUE] Should the internal validity
 #'   issues be raised as errors? If TRUE (the default), this function checks for all
@@ -596,9 +539,9 @@ validate_location_table <- function(
   }
 
   # Define list of years for particular tables if `check_years` is NULL
-  if(is.null(check_years) & (table_name %in% c('snapshot', 'change'))){
+  if(is.null(check_years) & (table_name=='change')){
     check_years <- na.omit(sort(unique(input_table$year)))
-  } else if(is.null(check_years) & (table_name == 'annual')){
+  } else if(is.null(check_years) & (table_name=='annual')){
     check_years <- seq(
       min(input_table$year, na.rm=T), max(input_table$year, na.rm=T), by=1
     )
@@ -639,15 +582,13 @@ validate_location_table <- function(
 #'   particular years and location change tables representing differences ACROSS multiple
 #'   years.
 #'
-#' @details This function takes two tables: a location hierarchy table (either the
-#'   'snapshot' or 'annual' table) and a location change table. These tables should have
-#'   already been validated for internal consistency using the functions
-#'   `validate_location_hierarchy_table_internal()` and
+#' @details This function takes the 'annual' and 'change' location tables. These tables
+#'   should have already been validated for internal consistency using the functions
+#'   `validate_location_annual_table_internal()` and
 #'   `validate_location_change_table_internal()`. This function checks that the two tables
 #'   are consistent across all specified years.
 #'
-#' @param hierarchy_table An input data.table for the 'snapshot' or 'annual' location
-#'   table
+#' @param annual_table An input data.table for the 'annual' location table
 #' @param change_table An input data.table for the 'change' location table
 #' @param max_level [integer] how many levels of administrative subdivisions should be
 #'   checked?
@@ -658,8 +599,8 @@ validate_location_table <- function(
 #'
 #' @import data.table
 #' @export
-validate_location_hierarchy_change_consistent <- function(
-  hierarchy_table, change_table, max_level, check_years
+validate_location_annual_change_consistent <- function(
+  annual_table, change_table, max_level, check_years
 ){
   issues_list <- list()
   return(issues_list)

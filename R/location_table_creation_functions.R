@@ -2,9 +2,8 @@
 ##
 ## Functions for creating tables used to define location sets and hierarchies for spatial
 ## CRVS analysis. These tables include:
-##  - Location hierarchy snapshots (blank templates, to be filled by user)
-##  - Location change histories (blank templates, to be filled by user)
 ##  - Location hierarchies for each year over a time period
+##  - Location change histories (blank templates, to be filled by user)
 ##  - Stable location hierarchy tables
 ##  - Full location metadata tables
 ##
@@ -20,8 +19,8 @@
 #' @details For more information about the location tables, refer to the package vignettes
 #'   and the documentation for \code{\link{validate_location_table}}
 #'
-#' @param table_name [char] Name of a valid location table. Valid options include
-#'   'snapshot', 'annual', 'change', 'stable', and 'full'
+#' @param table_name [char] Name of a valid location table. To check valid location table
+#'   names, pull from `get_valid_location_table_names()`
 #'
 #' @return A data.table with a single row of NA data entries, formatted with the correct
 #'  field names and data types for the specified location table.
@@ -47,46 +46,6 @@ create_location_table_template <- function(table_name){
 }
 
 
-#' Build annual location table
-#'
-#' @description Construct a table describing the location hierarchy for all years in
-#'   the time series.
-#'
-#' @details For more information about the 'change', 'annual', and 'stable' location
-#'   tables, refer to the package vignettes and the documentation for
-#'   \code{\link{validate_location_table}}
-#'
-#' @param snapshot_table A valid 'snapshot' location table describing the location
-#'   hierarchy in years where data is available.
-#' @param change_table A valid 'change' location table describing changes to the location
-#'   hierarchy from one year to the next.
-#' @param year_start First year of the analysis time series
-#' @param year_end Final year of the analysis time series
-#' @param verbose [bool, default TRUE] Print messages about table construction progress?
-#'
-#' @return
-#'
-#' @import data.table
-#' @export
-build_annual_location_table <- function(
-  snapshot_table, change_table, year_start, year_end, verbose = TRUE
-){
-  if(verbose) message("Building annual location table:")
-
-  # Validate input arguments
-  if(verbose) message("  - Validating input arguments")
-  validate_year_range(year_start = year_start, year_end = year_end)
-  year_range <- start_year:end_year
-  validate_location_table('snapshot', input_table=snapshot_table, check_years=year_range)
-  validate_location_table('change', input_table = change_table, check_years = year_range)
-
-  # ETC ETC
-  if(verbose) message("  - ETC ETC")
-
-  return(data.table())
-}
-
-
 #' Build stable location table
 #'
 #' @description Construct a table that identifies unique geographic units with stable
@@ -96,11 +55,11 @@ build_annual_location_table <- function(
 #'   tables, refer to the package vignettes and the documentation for
 #'   \code{\link{validate_location_table}}
 #'
-#' @param change_table A valid 'change' location table describing changes to the location
-#'   hierarchy from one year to the next.
 #' @param annual_table A valid 'annual' location table describing the location
 #'   hierarchy for all years in the years between \code{year_start} and \code{year_end}
 #'   (inclusive).
+#' @param change_table A valid 'change' location table describing changes to the location
+#'   hierarchy from one year to the next.
 #' @param year_start First year of the analysis time series
 #' @param year_end Final year of the analysis time series
 #' @param verbose [bool, default TRUE] Print messages about table construction progress?
@@ -110,7 +69,7 @@ build_annual_location_table <- function(
 #' @import data.table
 #' @export
 build_stable_location_table <- function(
-  change_table, annual_table, year_start, year_end, verbose = TRUE
+  annual_table, change_table, year_start, year_end, verbose = TRUE
 ){
   if(verbose) message("Building stable location table:")
 
@@ -169,17 +128,17 @@ build_full_location_table <- function(
 }
 
 
-#' Build the 'annual', 'stable', and 'full' location tables.
+#' Build the 'stable' and 'full' location tables.
 #'
-#' @description Based on two user-constructed location tables ('snapshot' and 'change'),
-#'   construct the three derivative location tables that are needed for analysis.
+#' @description Based on two user-constructed location tables ('annual' and 'change'),
+#'   construct two derivative location tables that are needed for analysis.
 #'
-#' @details The location tables constructed by this function are, in order: 'annual',
-#'   'stable', and 'full'. For more information on all the location tables, refer to the
-#'   package vignettes and the documentation for \code{\link{validate_location_table}}
+#' @details The location tables constructed by this function are, in order, 'stable' and
+#'   'full'. For more information on all the location tables, refer to the package
+#'   vignettes and the documentation for \code{\link{validate_location_table}}
 #'
-#' @param snapshot_table A valid 'snapshot' location table describing the location
-#'   hierarchy in years where data is available.
+#' @param annual_table A valid 'annual' location table describing the location hierarchy
+#'   in years where data is available.
 #' @param change_table A valid 'change' location table describing changes to the location
 #'   hierarchy from one year to the next.
 #' @param year_start First year of the analysis time series
@@ -187,34 +146,31 @@ build_full_location_table <- function(
 #' @param verbose [bool, default TRUE] Print messages about table construction progress?
 #'
 #' @return A list of the three derived location tables for small-area CRVS analysis:
-#'    - 'annual': Describes the location hierarchy for ALL years in the time period
 #'    - 'stable': Identifies geographic units with stable boundaries over the time period
 #'    - 'full': Full location metadata table containing identifiers from both the 'annual'
 #'        and 'stable' tables
 #'
 #' @export
 build_all_location_tables <- function(
-  snapshot_table, change_table, year_start, year_end, verbose = TRUE
+  annual_table, change_table, year_start, year_end, verbose = TRUE
 ){
-  # Using snapshot and change tables, build annual table
-  annual_table <- build_annual_location_table(
-    snapshot_table = snapshot_table, change_table = change_table, year_start = year_start,
-    year_end = year_end, verbose = verbose
-  )
-  # Using change and annual tables, build stable table
+  # Using annual and change tables, build stable table
   stable_table <- build_stable_location_table(
-    change_table = change_table, annual_table = annual_table, year_start = year_start,
+    annual_table = annual_table, change_table = change_table, year_start = year_start,
     year_end = year_end, verbose = verbose
   )
+  validate_location_table(
+    'stable', input_table=stable_table, check_years=year_start:year_end
+  )
+
   # Merge stable table onto annual table to build full location metadata table
   full_table <- build_full_location_table(
     annual_table = annual_table, stable_table = stable_table, year_start = year_start,
     year_end = year_end, verbose = verbose
   )
-  # Validate the full location metadata table
   validate_location_table('full', input_table=full_table, check_years=year_start:year_end)
 
   # Return
   if(verbose) message("All location tables have been constructed successfully.")
-  return(list(annual = annual_table, stable = stable_table, full = full_table))
+  return(list(stable = stable_table, full = full_table))
 }
