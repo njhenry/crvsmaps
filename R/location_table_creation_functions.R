@@ -46,6 +46,44 @@ create_location_table_template <- function(table_name){
 }
 
 
+#' Get connected subgraphs
+#'
+#' @description Find connected subgraphs of interacting locations over time
+#'
+#' @details This is a utility function used to create the 'stable' location table, and is
+#'   not exposed to the package user
+#'
+#' @param edge_matrix [character Matrix] an N-by-2 character matrix, where each 2-item
+#'   row lists an edge between two named vertices
+#'
+#' @return A data.table with two columns: 'vertex' listing each of the named vertices, and
+#'   'group' listing unique subgraphs between named vertices (1-indexed)
+#'
+#' @import data.table igraph
+get_connected_subgraphs <- function(edge_matrix){
+  # Special case for no entries
+  if(nrow(edge_matrix) == 0) return(data.table(vertex=character(0), group=integer(0)))
+
+  # Validate that input dataset is an N-by-2 matrix of character data
+  if(!is.matrix(edge_matrix)) stop("Edge matrix must be a matrix")
+  if(ncol(edge_matrix) != 2) stop("Edge matrix should have exactly two columns")
+  edge_vec <- as.vector(t(edge_matrix))
+  if(!'character' %in% class(edge_vec)) stop("Matrix entries must be characters")
+
+  # Convert to graph
+  full_graph <- igraph::make_graph(edge_vec, directed=FALSE)
+
+  # Get connected subgraphs and return, with membership
+  groupings_vec <- igraph::components(full_graph)$membership
+  groupings_dt <- data.table::data.table(
+    vertex = names(groupings_vec),
+    group = groupings_vec
+  )[order(group, vertex)]
+
+  return(groupings_dt)
+}
+
+
 #' Build stable location table
 #'
 #' @description Construct a table that identifies unique geographic units with stable
@@ -71,20 +109,71 @@ create_location_table_template <- function(table_name){
 build_stable_location_table <- function(
   annual_table, change_table, year_start, year_end, verbose = TRUE
 ){
-  if(verbose) message("Building stable location table:")
+  # Helper function for messaging
+  vbmsg <- function(...) if(verbose) message(...)
+  vbmsg("Building stable location table:")
 
   # Validate input arguments
-  if(verbose) message("  - Validating input arguments")
+  vbmsg("  - Validating input arguments")
   validate_year_range(year_start = year_start, year_end = year_end)
-  year_range <- start_year:end_year
+  year_range <- year_start:year_end
   validate_location_table('change', input_table = change_table, check_years = year_range)
   validate_location_table('annual', input_table = annual_table, check_years = year_range)
 
-  # ETC ETC
-  if(verbose) message("  - ETC ETC")
+  # Merge table creation happens separately for each admin level
+  max_level <- max(annual_table$level)
+  list_by_level <- vector('list', length=max_level)
+  for(thislvl in 1:max_level){
+    vbmsg("  - Admin ",thislvl,":")
 
+    # Get subset of change table over this year range
+    change_sub <- change_table[(year > year_start) & (year <= year_end) & (level==thislvl),]
+    annual_sub <- annual_table[(year >= year_start) & (year <= year_end) & (level==thislvl),]
+    # Include only rows that list connections between different admin codes
+    change_sub <- change_sub[ start_code != end_code, ]
 
-  return(data.table())
+    # Get connectivity
+    subgraphs <- get_connected_subgraphs(
+      edge_matrix = as.matrix(change_sub[, .(start_code, end_code)])
+    )
+    setnames(subgraphs, c('vertex', 'group'), c('adm_code','stable_id'))
+    # Exclude any 'dummy' admin codes
+    real_adms <- unique(annual_sub$adm_code)
+    subgraphs <- subgraphs[adm_code %in% real_adms, ]
+
+    # Create the stable table, which is a combination of unconnected locations and
+    #  connected subgraphs
+    annual_unconnected <- data.table::data.table(
+      adm_code = sort(setdiff(real_adms, unique(subgraphs$adm_code)))
+    )
+    # The stable_id is indexed at zero
+    annual_unconnected[, stable_id := .I - 1 ]
+    subgraphs$stable_id <- subgraphs$stable_id + max(annual_unconnected$stable_id)
+    stable_this_level <- rbindlist(list(annual_unconnected, subgraphs), use.names=TRUE)
+    vbmsg(paste(
+      "    -", nrow(stable_this_level), "admin units were grouped into",
+      max(stable_this_level$stable_id) + 1, "unique groupings"
+    ))
+
+    stable_this_level[, level := thislvl ]
+    list_by_level[[thislvl]] <- stable_this_level
+  }
+
+  # Combine all levels and add identifying information
+  stable_all_levels <- data.table::rbindlist(list_by_level, use.names = TRUE)
+  stable_all_levels$iso <- annual_table$iso[1]
+  stable_all_levels[, stable_id := as.integer(stable_id) ]
+  # Get information about first and last year where an adm_code was found in the dataset
+  year_ranges <- annual_table[, .(ymin=min(year), ymax=max(year)), by = .(adm_code,level)]
+  stable_all_levels[
+    year_ranges,
+    `:=` (year_start = ymin, year_end = ymax),
+    on = c('adm_code', 'level')
+  ]
+  data.table::setcolorder(stable_all_levels, get_location_table_required_fields('stable'))
+
+  vbmsg("  - Successfully built stable location table across ",max_level," admin levels.")
+  return(stable_all_levels)
 }
 
 
@@ -117,14 +206,28 @@ build_full_location_table <- function(
   # Validate input arguments
   if(verbose) message("  - Validating input arguments")
   validate_year_range(year_start = year_start, year_end = year_end)
-  year_range <- start_year:end_year
+  year_range <- year_start:year_end
   validate_location_table('annual', input_table = annual_table, check_years = year_range)
   validate_location_table('stable', input_table = stable_table, check_years = year_range)
 
-  # ETC ETC
-  if(verbose) message("  - ETC ETC")
+  stable_year_range <- na.omit(unique(stable_table$year_start, stable_table$year_end))
+  if((max(stable_year_range) > year_end) | (min(stable_year_range) < year_start)){
+    warning(
+      "Stable location table apparently extends beyond the time period ",year_start,'-',
+      year_end
+    )
+  }
 
-  return(data.table())
+  # Merge the stable IDs onto the annual location table
+  full_table <- copy(annual_table)
+  full_table[stable_table, stable_id := i.stable_id, on = c('adm_code', 'level')]
+
+  # Final column ordering and cleaning
+  required_columns <- get_location_table_required_fields('full')
+  full_table <- full_table[, ..required_columns]
+  data.table::setcolorder(full_table, required_columns)
+
+  return(full_table)
 }
 
 
