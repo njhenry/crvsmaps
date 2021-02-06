@@ -7,17 +7,25 @@
 validate_location_annual_table_internal(input_table, check_years)
 }
 \arguments{
-\item{input_table}{An input data.table containing a 'snapshot' or 'annual' location
-hierarchy table}
+\item{input_table}{An input data.table containing an 'annual' location hierarchy table}
 
-\item{check_years}{\link{integer} Which years should be checked?}
+\item{check_years}{\link{integer} Which years should be checked? These should be sequential}
 }
 \value{
 Returns a list of internal validity issues. If there are no internal validity
 issues, returns an empty list.
 }
 \description{
-Wrapper function to validate the annual location hierarchy table - this is
-identical to the 'snapshot' table, with the exception that it must include all
-sequential years in a time series.
+Validate that a location hierarchy table is internally consistent within
+each year in a time series.
+}
+\details{
+This function can be used to check the 'annual' location table. It performs
+the following checks:
+\itemize{
+\item All required columns are present and have the correct data types and content
+\item All required location levels are present
+\item For multi-level tables, each location at the more-detailed levels have valid
+parents and each location at the less-detailed levels have valid children
+}
 }

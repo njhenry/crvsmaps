@@ -7,8 +7,8 @@
 create_location_table_template(table_name)
 }
 \arguments{
-\item{table_name}{\link{char} Name of a valid location table. Valid options include
-'snapshot', 'annual', 'change', 'stable', and 'full'}
+\item{table_name}{\link{char} Name of a valid location table. To check valid location table
+names, pull from \code{get_valid_location_table_names()}}
 }
 \value{
 A data.table with a single row of NA data entries, formatted with the correct
@@ -20,5 +20,6 @@ column types. This function can be used to confirm the proper format for the loc
 hierarchy snapshot and change history tables that need to be filled by the user.
 }
 \details{
-
+For more information about the location tables, refer to the package vignettes
+and the documentation for \code{\link{validate_location_table}}
 }

@@ -2,10 +2,10 @@
 % Please edit documentation in R/location_table_creation_functions.R
 \name{build_all_location_tables}
 \alias{build_all_location_tables}
-\title{Build the 'annual', 'stable', and 'full' location tables.}
+\title{Build the 'stable' and 'full' location tables.}
 \usage{
 build_all_location_tables(
-  snapshot_table,
+  annual_table,
   change_table,
   year_start,
   year_end,
@@ -13,8 +13,8 @@ build_all_location_tables(
 )
 }
 \arguments{
-\item{snapshot_table}{A valid 'snapshot' location table describing the location
-hierarchy in years where data is available.}
+\item{annual_table}{A valid 'annual' location table describing the location hierarchy
+in years where data is available.}
 
 \item{change_table}{A valid 'change' location table describing changes to the location
 hierarchy from one year to the next.}
@@ -28,18 +28,17 @@ hierarchy from one year to the next.}
 \value{
 A list of the three derived location tables for small-area CRVS analysis:
 \itemize{
-\item 'annual': Describes the location hierarchy for ALL years in the time period
 \item 'stable': Identifies geographic units with stable boundaries over the time period
 \item 'full': Full location metadata table containing identifiers from both the 'annual'
 and 'stable' tables
 }
 }
 \description{
-Based on two user-constructed location tables ('snapshot' and 'change'),
-construct the three derivative location tables that are needed for analysis.
+Based on two user-constructed location tables ('annual' and 'change'),
+construct two derivative location tables that are needed for analysis.
 }
 \details{
-The location tables constructed by this function are, in order: 'annual',
-'stable', and 'full'. For more information on all the location tables, refer to the
-package vignettes and the documentation for \code{\link{validate_location_table}}
+The location tables constructed by this function are, in order, 'stable' and
+'full'. For more information on all the location tables, refer to the package
+vignettes and the documentation for \code{\link{validate_location_table}}
 }

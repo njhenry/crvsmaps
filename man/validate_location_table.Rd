@@ -18,7 +18,7 @@ table name per \code{get_valid_location_table_names()}.}
 \item{input_table}{The location table to be validated for internal consistency}
 
 \item{check_years}{\link{integer, default NULL} Which years of data should be checked? Only
-used for the 'snapshot', 'annual', and 'change' table types. For these table types,
+used for the 'annual', and 'change' table types. For these table types, if
 \code{check_years} is NULL (the default), checks all unique years listed in the table.}
 
 \item{raise_issues_as_errors}{\link{logical, default TRUE} Should the internal validity
@@ -38,21 +38,19 @@ spatial analysis
 \details{
 To create a valid location hierarchy over a period of time, the user needs to
 create two tables representing that location hierarchy, one representing snapshots of
-the location hierarchy in particular years, and the other representing changes to the
+the location hierarchy in each analysis year, and the other representing changes to a
 location hierarchy across years. These tables are validated against each other and
 then used to construct three additional useful location tables for CRVS analysis and
 modeling. For more details and examples of these tables, check the package vignettes.
 
-years where the user has location data available. This table must include a complete
-accounting of all administrative levels from the top level (states or provinces) down
-to the most detailed unit of analysis (for example, districts or cantons) for every
-year where data is available. The user is required to include data from the first and
-last year of the analysis time series.
+each year in an analysis time series. This table must include a complete accounting
+of all administrative levels from the top level (states or provinces) down to the
+most detailed unit of analysis (for example, districts or cantons) for each year.
 
-REQUIRED FIELDS FOR THE 'snapshot' TABLE:
+REQUIRED FIELDS FOR THE 'annual' TABLE:
 \itemize{
 \item 'iso': ISO3 code for the country being modeled (character)
-\item 'year': Four-digit year when a snapshot was available (integer)
+\item 'year': Four-digit year (integer)
 \item 'level': Standardized administrative level for each location. Top-level
 administrative divisions, often called states or provinces, are level 1. The
 subdivisions contained within each top-level division, often called counties or
@@ -60,11 +58,11 @@ districts, are level 2. The subdivisions within each of those are level 3, and
 so on. The top-level country information (level 0) should NOT be included in this
 table. (integer)
 \item 'adm_code': Uniquely identifying code for each administrative subdivision in the
-year when the snapshot was taken. These codes will often be numeric, but
-internally they are treated as strings to catch alphanumeric codes. (character)
+given year. These codes will often be numeric, but internally they are treated as
+strings to catch alphanumeric codes. (character)
 \item 'parent_code': Uniquely identifying code for the containing/parent location of a
 given administrative subdivision. These should be internally consistent for each
-snapshot year - for example, the parent codes of level 2 locations should match
+year - for example, the parent codes of level 2 locations should match
 identifying codes for level 1 locations. The parent codes for level 1 locations
 should be input as NA strings. (character)
 \item 'adm_name': Name of the administrative subdivision. (character)
@@ -104,10 +102,10 @@ can be different.
 \item 'level': Level of administrative unit that is affected by these changes. Some
 administrative redistricting can affect multiple levels of a location hierarchy;
 these should be represented by 2+ distinct records with different levels.
-\item 'start_code': The administrative code ('adm_code' in the snapshot table) for the
+\item 'start_code': The administrative code ('adm_code' in the annual table) for the
 administrative unit before the change is applied. For more information, see the
 package documentation.
-\item 'end_code': The administrative code ('adm_code' in the snapshot table) for the
+\item 'end_code': The administrative code ('adm_code' in the annual table) for the
 administrative unit after the change is applied. For more information, see the
 package documentation.
 \item 'swap_with': For the 'BORDER' change_type only, what is the uniquely-identifying

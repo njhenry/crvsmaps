@@ -4,11 +4,13 @@
 \alias{validate_location_full_table_internal}
 \title{Validate full location lookup table}
 \usage{
-validate_location_full_table_internal(input_table)
+validate_location_full_table_internal(input_table, check_years)
 }
 \arguments{
 \item{input_table}{An input data.table for the 'full' location table, created using
 the \code{TODO()} function.}
+
+\item{check_years}{\link{integer} Which years should be checked?}
 }
 \value{
 Returns a list of internal validity issues. If there are no internal validity

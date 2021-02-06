@@ -5,20 +5,20 @@
 \title{Build stable location table}
 \usage{
 build_stable_location_table(
-  change_table,
   annual_table,
+  change_table,
   year_start,
   year_end,
   verbose = TRUE
 )
 }
 \arguments{
-\item{change_table}{A valid 'change' location table describing changes to the location
-hierarchy from one year to the next.}
-
 \item{annual_table}{A valid 'annual' location table describing the location
 hierarchy for all years in the years between \code{year_start} and \code{year_end}
 (inclusive).}
+
+\item{change_table}{A valid 'change' location table describing changes to the location
+hierarchy from one year to the next.}
 
 \item{year_start}{First year of the analysis time series}
 
