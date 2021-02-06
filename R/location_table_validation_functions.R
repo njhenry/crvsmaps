@@ -82,7 +82,7 @@ get_location_table_required_fields <- function(table_name){
       'swap_with'
     ),
     stable = c(
-      'iso', 'level', 'stable_id', 'adm_code', 'start_year', 'end_year'
+      'iso', 'level', 'stable_id', 'adm_code', 'year_start', 'year_end'
     ),
     full = c(
       'iso','year','level','stable_id','adm_code','parent_code','adm_name','adm_ascii_name'
@@ -113,7 +113,7 @@ get_location_table_field_classes <- function(table_name){
   field_classes <- c(
     iso=char, year=int, level=int, adm_code=char, parent_code=char, adm_name=char,
     adm_ascii_name=char, change_number=int, change_type=char, start_code=char,
-    end_code=char, swap_with=char
+    end_code=char, swap_with=char, stable_id=int, year_start=int, year_end=int
   )
   # Check that all required field names are included in the classes vector
   missing_fields <- setdiff(required_fields, names(field_classes))
@@ -381,8 +381,24 @@ validate_location_change_table_internal <- function(
 validate_location_stable_table_internal <- function(
   input_table
 ){
-  issues_list <- list()
-  return(issues_list)
+  il <- list()
+
+  # Check for NAs
+  reqd_fields <- get_location_table_required_fields('stable')
+  for(fld in reqd_fields){
+    if(any(is.na(input_table[[fld]]))) il <- c(il, paste("NAs in required field:", fld))
+  }
+
+  # Check validity of the stable_id field
+  min_id <- min(input_table$stable_id, na.rm=TRUE)
+  max_id <- max(input_table$stable_id, na.rm=TRUE)
+  missing_stable_ids <- sort(setdiff(min_id:max_id, unique(input_table$stable_id)))
+
+  if(length(missing_stable_ids) > 0){
+    missing_ids_txt <- paste(missing_stable_ids, collapse=',')
+    il <- c(il, paste("Missing IDs between", min_id, "and", max_id, ":", missing_ids_txt))
+  }
+  return(il)
 }
 
 
@@ -392,16 +408,31 @@ validate_location_stable_table_internal <- function(
 #'
 #' @param input_table An input data.table for the 'full' location table, created using
 #'   the `TODO()` function.
+#' @param check_years [integer] Which years should be checked?
 #'
 #' @return Returns a list of internal validity issues. If there are no internal validity
 #'   issues, returns an empty list.
 #'
 #' @import data.table
 validate_location_full_table_internal <- function(
-  input_table
+  input_table, check_years
 ){
-  issues_list <- list()
-  return(issues_list)
+  # Needs to pass all the same checks as an annual table
+  il <- validate_location_annual_table_internal(
+    input_table = input_table, check_years = check_years
+  )
+
+  # Check validity of the stable_id field
+  if(any(is.na(input_table$stable_id))) il <- c(il, "NAs in stable ID field")
+  min_id <- min(input_table$stable_id, na.rm=TRUE)
+  max_id <- max(input_table$stable_id, na.rm=TRUE)
+  missing_stable_ids <- sort(setdiff(min_id:max_id, unique(input_table$stable_id)))
+
+  if(length(missing_stable_ids) > 0){
+    missing_ids_txt <- paste(missing_stable_ids, collapse=',')
+    il <- c(il, paste("Missing IDs between", min_id, "and", max_id, ":", missing_ids_txt))
+  }
+  return(il)
 }
 
 
@@ -562,10 +593,8 @@ validate_location_table <- function(
   #  - If FALSE, return the list of issues even if it is empty
   if(raise_issues_as_errors==TRUE){
     if(length(issues_list) > 0){
-      stop(
-        "Validation issues for table ",table_name,":\n  - ",
-        paste(issues_list, collapse='\n  - ')
-      )
+      invisible(lapply(issues_list, message))
+      stop(paste("Found", length(issues_list), "validation issues for table", table_name))
     } else {
       invisible()
     }
@@ -573,7 +602,6 @@ validate_location_table <- function(
     return(issues_list)
   }
 }
-
 
 
 #' Validate consistency between location hierarchies and location changes
@@ -586,13 +614,16 @@ validate_location_table <- function(
 #'   should have already been validated for internal consistency using the functions
 #'   `validate_location_annual_table_internal()` and
 #'   `validate_location_change_table_internal()`. This function checks that the two tables
-#'   are consistent across all specified years.
+#'   represent consistent changes across the time series.
 #'
 #' @param annual_table An input data.table for the 'annual' location table
 #' @param change_table An input data.table for the 'change' location table
-#' @param max_level [integer] how many levels of administrative subdivisions should be
-#'   checked?
-#' @param check_years [integer] Which years should be checked?
+#' @param year_start [integer] First year of the analysis time series
+#' @param year_end [integer] Final year of the analysis time series
+#' @param raise_issues_as_errors [logical, default TRUE] Should any cross-compatibility
+#'   issues be raised as errors? If TRUE (the default), this function checks for all
+#'   issues and then errors if any were found. If FALSE, this function returns a list of
+#'   issues and prints a warning message if any were found.
 #'
 #' @return Returns a list of internal validity issues. If there are no internal validity
 #'   issues, returns an empty list.
@@ -600,8 +631,79 @@ validate_location_table <- function(
 #' @import data.table
 #' @export
 validate_location_annual_change_consistent <- function(
-  annual_table, change_table, max_level, check_years
+  annual_table, change_table, year_start, year_end, raise_issues_as_errors = TRUE
 ){
-  issues_list <- list()
-  return(issues_list)
+  # Initialize list of possible issues
+  il <- list()
+
+  validate_year_range(year_start = year_start, year_end = year_end)
+  if(year_start == year_end){
+    message("Only one year in time series - no need to check compatibility across years")
+  } else {
+
+    # Check transitions by year and level
+    check_transition_years <- year_start:(year_end - 1)
+    check_levels <- sort(unique(annual_table$level))
+    for(thislvl in check_levels){
+      for(from_year in check_transition_years){
+        to_year <- from_year + 1
+        yr_iss <- function(...){
+          paste0('Level ',thislvl,", from ",from_year," to ",to_year,": ",...)
+        }
+
+        from_dt <- annual_table[(level == thislvl) & (year == from_year), ]
+        to_dt <- annual_table[(level == thislvl) & (year == to_year), ]
+        yr_changes <- change_table[(level == thislvl) & (year == to_year), ]
+        setnames(yr_changes, 'start_code', 'adm_code')
+
+        # Apply the changes to the 'from' snapshot and see if it matches the 'to' snapshot
+        for(change_idx in sort(unique(yr_changes$change_number))){
+          this_change <- yr_changes[change_number == change_idx, .(adm_code, end_code)]
+          # Check that all starting codes were available when this change was to be applied
+          missing_start_codes <- setdiff(unique(this_change$adm_code), from_dt$adm_code)
+          if(length(missing_start_codes) > 0){
+            il <- c(il, yr_iss(
+              "change ", change_idx, " - change codes ",
+              paste(missing_start_codes, collapse=','), " were not available in annual dt"
+            ))
+          }
+          # Apply the codes to the data.table
+          from_dt <- merge(
+            x=from_dt, y=this_change[, .(adm_code, end_code)], by='adm_code', all.x=TRUE
+          )
+          from_dt[!is.na(end_code), adm_code := end_code ]
+          from_dt[, end_code := NULL ]
+        }
+        # Check that the admin codes all match between the constructed and given tables
+        constructed_codes <- na.omit(unique(from_dt$adm_code))
+        true_codes <- na.omit(unique(to_dt$adm_code))
+        missing_from <- setdiff(true_codes, constructed_codes)
+        if(length(missing_from) > 0){
+          il <- c(il, yr_iss(
+            "Missing codes from change-updated table -  ",paste(missing_from, collapse=',')
+          ))
+        }
+        missing_to <- setdiff(constructed_codes, true_codes)
+        if(length(missing_to) > 0){
+          il <- c(il, yr_iss(
+            "Missing codes from next year of annual data -  ",paste(missing_to, collapse=',')
+          ))
+        }
+      }
+    } # END annual checking
+  }
+
+  # Function output depends on the argument `raise_issues_as_errors`:
+  #  - If TRUE, throw an error if there are issues, and pass silently if there are none
+  #  - If FALSE, return the list of issues even if it is empty
+  if(raise_issues_as_errors==TRUE){
+    if(length(il) > 0){
+      invisible(lapply(il, message))
+      stop("Found ",length(il)," compatibility issues between change and annual tables.")
+    } else {
+      invisible()
+    }
+  } else {
+    return(il)
+  }
 }
