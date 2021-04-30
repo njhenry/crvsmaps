@@ -372,7 +372,7 @@ validate_location_change_table_internal <- function(
 #' @description Validate that a stable location hierarchy table is internally consistent
 #'
 #' @param input_table An input data.table for the 'stable' location table, created using
-#'   the `TODO()` function.
+#'   the \link{\code{build_stable_location_table}} function.
 #'
 #' @return Returns a list of internal validity issues. If there are no internal validity
 #'   issues, returns an empty list.
@@ -407,7 +407,7 @@ validate_location_stable_table_internal <- function(
 #' @description Validate that a full location lookup table is internally consistent
 #'
 #' @param input_table An input data.table for the 'full' location table, created using
-#'   the `TODO()` function.
+#'   the \link{\code{build_full_location_table}} function.
 #' @param check_years [integer] Which years should be checked?
 #'
 #' @return Returns a list of internal validity issues. If there are no internal validity

@@ -8,7 +8,7 @@ validate_location_full_table_internal(input_table, check_years)
 }
 \arguments{
 \item{input_table}{An input data.table for the 'full' location table, created using
-the \code{TODO()} function.}
+the \link{\code{build_full_location_table}} function.}
 
 \item{check_years}{\link{integer} Which years should be checked?}
 }

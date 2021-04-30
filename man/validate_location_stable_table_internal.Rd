@@ -8,7 +8,7 @@ validate_location_stable_table_internal(input_table)
 }
 \arguments{
 \item{input_table}{An input data.table for the 'stable' location table, created using
-the \code{TODO()} function.}
+the \link{\code{build_stable_location_table}} function.}
 }
 \value{
 Returns a list of internal validity issues. If there are no internal validity

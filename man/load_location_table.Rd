@@ -12,6 +12,10 @@ load_location_table(table_name, file, ...)
 \item{file}{\link{char} Filepath to read from}
 
 \item{...}{Other arguments to data.table::fread()}
+
+\item{level}{\link{integer, default NULL} Optional argument to only pull a single level of
+administrative data from a location table. This can be useful when data is only being
+modeled at a particular administrative level.}
 }
 \value{
 Data.table containing the table with properly formatted columns, where known
